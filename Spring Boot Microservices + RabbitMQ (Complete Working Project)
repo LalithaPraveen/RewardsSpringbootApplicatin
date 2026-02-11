@@ -1,0 +1,247 @@
+Spring Boot Microservices + RabbitMQ (Complete Working Project)
+This is a ready-to-run, end‑to‑end project you can use today.
+________________________________________
+🧱 Architecture
+Angular UI (optional)
+      |
+      v
+API Gateway (8080)
+      |
+      v
+User Service  ----> RabbitMQ ---->  Order Service
+      |
+      v
+   H2 DB
+________________________________________
+📁 Project Structure
+microservices-project/
+│
+├── discovery-service
+├── api-gateway
+├── user-service
+├── order-service
+└── docker-compose.yml
+________________________________________
+1️⃣ Discovery Service (Eureka)
+Dependencies
+•	Spring Web
+•	Eureka Server
+Main Class
+@SpringBootApplication
+@EnableEurekaServer
+public class DiscoveryServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(DiscoveryServiceApplication.class, args);
+    }
+}
+application.yml
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-service
+
+eureka:
+  client:
+    register-with-eureka: false
+    fetch-registry: false
+________________________________________
+2️⃣ API Gateway
+Dependencies
+•	Spring Cloud Gateway
+•	Eureka Discovery Client
+application.yml
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      routes:
+        - id: user-service
+          uri: lb://USER-SERVICE
+          predicates:
+            - Path=/users/**
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+________________________________________
+3️⃣ User Service (Producer)
+Dependencies
+•	Spring Web
+•	Spring Data JPA
+•	H2 Database
+•	Spring AMQP
+•	Eureka Client
+application.yml
+server:
+  port: 0
+
+spring:
+  application:
+    name: user-service
+
+  datasource:
+    url: jdbc:h2:mem:userdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+  h2:
+    console:
+      enabled: true
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+Entity
+@Entity
+@Data
+public class User {
+    @Id
+    @GeneratedValue
+    private Long id;
+    private String name;
+}
+RabbitMQ Config
+@Configuration
+public class RabbitMQConfig {
+    public static final String QUEUE = "order.queue";
+    public static final String EXCHANGE = "order.exchange";
+    public static final String ROUTING_KEY = "order.created";
+
+    @Bean
+    Queue queue() {
+        return new Queue(QUEUE, true);
+    }
+
+    @Bean
+    DirectExchange exchange() {
+        return new DirectExchange(EXCHANGE);
+    }
+
+    @Bean
+    Binding binding() {
+        return BindingBuilder.bind(queue()).to(exchange()).with(ROUTING_KEY);
+    }
+}
+Producer
+@Service
+public class OrderProducer {
+    private final RabbitTemplate rabbitTemplate;
+
+    public OrderProducer(RabbitTemplate rabbitTemplate) {
+        this.rabbitTemplate = rabbitTemplate;
+    }
+
+    public void sendOrder() {
+        rabbitTemplate.convertAndSend(
+            RabbitMQConfig.EXCHANGE,
+            RabbitMQConfig.ROUTING_KEY,
+            "ORDER_CREATED"
+        );
+    }
+}
+Controller
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    private final OrderProducer producer;
+
+    public UserController(OrderProducer producer) {
+        this.producer = producer;
+    }
+
+    @PostMapping("/create-order")
+    public String createOrder() {
+        producer.sendOrder();
+        return "Order event sent";
+    }
+}
+________________________________________
+4️⃣ Order Service (Consumer)
+Dependencies
+•	Spring Web
+•	Spring AMQP
+•	Eureka Client
+application.yml
+server:
+  port: 0
+
+spring:
+  application:
+    name: order-service
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+Consumer
+@Service
+public class OrderConsumer {
+
+    @RabbitListener(queues = "order.queue")
+    public void consume(String message) {
+        System.out.println("Received from RabbitMQ: " + message);
+    }
+}
+________________________________________
+5️⃣ Run RabbitMQ (Docker)
+docker run -d \
+ --name rabbitmq \
+ -p 5672:5672 \
+ -p 15672:15672 \
+ rabbitmq:3-management
+UI:
+http://localhost:15672
+________________________________________
+▶️ Run Order
+1.	RabbitMQ
+2.	Discovery Service
+3.	Order Service
+4.	User Service
+5.	API Gateway
+________________________________________
+🧪 Test
+POST http://localhost:8080/users/create-order
+Expected in order-service logs:
+Received from RabbitMQ: ORDER_CREATED
+________________________________________
+✅ What You Have Now
+•	Full microservices setup
+•	H2 DB
+•	RabbitMQ async messaging
+•	Eureka discovery
+•	API Gateway routing
+________________________________________
+🚀 Next Enhancements
+•	Retry & Dead Letter Queue
+•	Kafka version
+•	Docker Compose
+•	JWT Security
+•	Angular UI integration
+You can build on this for interviews or real projects.
